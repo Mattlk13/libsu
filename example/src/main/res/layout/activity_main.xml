@@ -44,7 +44,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Shell Sync" />
+            android:text="Sync CMD" />
 
         <Button
             android:id="@+id/test_async"
@@ -52,7 +52,15 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Shell Async" />
+            android:text="Async CMD" />
+
+        <Button
+            android:id="@+id/test_queue"
+            style="?android:borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Test Queue" />
 
         <Button
             android:id="@+id/close_shell"
@@ -131,6 +139,7 @@
         <Button
             android:id="@+id/stress_test"
             style="?android:borderlessButtonStyle"
+            android:enabled="false"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"

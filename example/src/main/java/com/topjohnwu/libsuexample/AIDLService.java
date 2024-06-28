@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 John "topjohnwu" Wu
+ * Copyright 2023 John "topjohnwu" Wu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import com.topjohnwu.superuser.ipc.RootService;
+import com.topjohnwu.superuser.nio.FileSystemManager;
 
 import java.util.UUID;
 
@@ -59,13 +60,17 @@ class AIDLService extends RootService {
         public String getUUID() {
             return uuid;
         }
+
+        @Override
+        public IBinder getFileSystemService() {
+            return FileSystemManager.getService();
+        }
     }
 
-    private String uuid;
+    private final String uuid = UUID.randomUUID().toString();
 
     @Override
     public void onCreate() {
-        uuid = UUID.randomUUID().toString();
         Log.d(TAG, "AIDLService: onCreate, " + uuid);
     }
 

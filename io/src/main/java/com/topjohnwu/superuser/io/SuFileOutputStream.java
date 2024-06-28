@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 John "topjohnwu" Wu
+ * Copyright 2023 John "topjohnwu" Wu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ package com.topjohnwu.superuser.io;
 
 import androidx.annotation.NonNull;
 
-import com.topjohnwu.superuser.Shell;
 import com.topjohnwu.superuser.internal.IOFactory;
+import com.topjohnwu.superuser.internal.Utils;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -74,7 +74,7 @@ public final class SuFileOutputStream {
                 // Try normal FileInputStream
                 return new FileOutputStream(file, append);
             } catch (FileNotFoundException e) {
-                if (!Shell.rootAccess())
+                if (!Utils.isMainShellRoot())
                     throw e;
                 return IOFactory.fifoOut(new SuFile(file), append);
             }

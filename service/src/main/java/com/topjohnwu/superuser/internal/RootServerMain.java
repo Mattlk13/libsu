@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 John "topjohnwu" Wu
+ * Copyright 2023 John "topjohnwu" Wu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,15 @@ import android.annotation.SuppressLint;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.ContextWrapper;
+import android.content.res.Resources;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.RemoteException;
+import android.os.UserHandle;
 import android.util.Log;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.concurrent.Callable;
 
@@ -42,8 +45,7 @@ just like it was launched in a non-root environment.
 Expected command-line args:
 args[0]: client service component name
 args[1]: client UID
-args[2]: client broadcast receiver intent filter
-args[3]: CMDLINE_START_SERVICE, CMDLINE_START_DAEMON, or CMDLINE_STOP_SERVICE
+args[2]: CMDLINE_START_SERVICE, CMDLINE_START_DAEMON, or CMDLINE_STOP_SERVICE
 */
 class RootServerMain extends ContextWrapper implements Callable<Object[]> {
 
@@ -89,8 +91,8 @@ class RootServerMain extends ContextWrapper implements Callable<Object[]> {
         // Close STDOUT/STDERR since it belongs to the parent shell
         System.out.close();
         System.err.close();
-        if (args.length < 4)
-            System.exit(0);
+        if (args.length < 3)
+            System.exit(1);
 
         Looper.prepareMainLooper();
 
@@ -103,29 +105,27 @@ class RootServerMain extends ContextWrapper implements Callable<Object[]> {
 
         // Main thread event loop
         Looper.loop();
-        System.exit(0);
+        System.exit(1);
     }
 
     private final int uid;
-    private final String filter;
     private final boolean isDaemon;
 
     @Override
     public Object[] call() {
-        Object[] objs = new Object[3];
+        Object[] objs = new Object[2];
         objs[0] = uid;
-        objs[1] = filter;
-        objs[2] = isDaemon;
+        objs[1] = isDaemon;
         return objs;
     }
 
+    @SuppressLint("DiscouragedPrivateApi")
     public RootServerMain(String[] args) throws Exception {
         super(null);
 
         ComponentName name = ComponentName.unflattenFromString(args[0]);
         uid = Integer.parseInt(args[1]);
-        filter = args[2];
-        String action = args[3];
+        String action = args[2];
         boolean stop = false;
 
         switch (action) {
@@ -135,9 +135,11 @@ class RootServerMain extends ContextWrapper implements Callable<Object[]> {
             case CMDLINE_START_DAEMON:
                 isDaemon = true;
                 break;
-            default:
+            case CMDLINE_START_SERVICE:
                 isDaemon = false;
                 break;
+            default:
+                throw new IllegalArgumentException("Unknown action");
         }
 
         if (isDaemon) daemon: try {
@@ -148,9 +150,9 @@ class RootServerMain extends ContextWrapper implements Callable<Object[]> {
                 break daemon;
 
             if (stop) {
-                m.stop(name, uid, filter);
+                m.stop(name, uid);
             } else {
-                m.broadcast(uid, filter);
+                m.broadcast(uid);
                 // Terminate process if broadcast went through without exception
                 System.exit(0);
             }
@@ -160,16 +162,72 @@ class RootServerMain extends ContextWrapper implements Callable<Object[]> {
                 System.exit(0);
         }
 
+        // Calling many system APIs can crash on some LG ROMs
+        // Override the system resources object to prevent crashing
+        try {
+            // This class only exists on LG ROMs with broken implementations
+            Class.forName("com.lge.systemservice.core.integrity.IntegrityManager");
+            // If control flow goes here, we need the resource hack
+            Resources systemRes = Resources.getSystem();
+            Resources wrapper = new ResourcesWrapper(systemRes);
+            Field systemResField = Resources.class.getDeclaredField("mSystem");
+            systemResField.setAccessible(true);
+            systemResField.set(null, wrapper);
+        } catch (ReflectiveOperationException ignored) {}
+
         Context systemContext = getSystemContext();
-        Context context = systemContext.createPackageContext(name.getPackageName(),
-                Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+        Context context;
+        int userId = uid / 100000; // UserHandler.getUserId
+        int flags = Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY;
+        try {
+            UserHandle userHandle;
+            try {
+                userHandle = (UserHandle) UserHandle.class
+                           .getDeclaredMethod("of", int.class).invoke(null, userId);
+            } catch (NoSuchMethodException e) {
+                userHandle = UserHandle.class
+                           .getDeclaredConstructor(int.class).newInstance(userId);
+            }
+            context = (Context) systemContext.getClass()
+                    .getDeclaredMethod("createPackageContextAsUser",
+                            String.class, int.class, UserHandle.class)
+                    .invoke(systemContext, name.getPackageName(), flags, userHandle);
+        } catch (Throwable e) {
+            Log.w("IPC", "Failed to create package context as user: " + userId, e);
+            context = systemContext.createPackageContext(name.getPackageName(), flags);
+        }
         attachBaseContext(context);
 
         // Use classloader from the package context to run everything
         ClassLoader cl = context.getClassLoader();
+
         Class<?> clz = cl.loadClass(name.getClassName());
         Constructor<?> ctor = clz.getDeclaredConstructor();
         ctor.setAccessible(true);
         attachBaseContext.invoke(ctor.newInstance(), this);
+    }
+
+    static class ResourcesWrapper extends Resources {
+
+        @SuppressWarnings("JavaReflectionMemberAccess")
+        @SuppressLint("DiscouragedPrivateApi")
+        public ResourcesWrapper(Resources res) throws ReflectiveOperationException {
+            super(res.getAssets(), res.getDisplayMetrics(), res.getConfiguration());
+            Method getImpl = Resources.class.getDeclaredMethod("getImpl");
+            getImpl.setAccessible(true);
+            Method setImpl = Resources.class.getDeclaredMethod("setImpl", getImpl.getReturnType());
+            setImpl.setAccessible(true);
+            Object impl = getImpl.invoke(res);
+            setImpl.invoke(this, impl);
+        }
+
+        @Override
+        public boolean getBoolean(int id) {
+            try {
+                return super.getBoolean(id);
+            } catch (NotFoundException e) {
+                return false;
+            }
+        }
     }
 }

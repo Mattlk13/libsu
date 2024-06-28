@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 John "topjohnwu" Wu
+ * Copyright 2023 John "topjohnwu" Wu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,9 +41,9 @@ import java.util.concurrent.Executor;
 /**
  * A remote root service using native Android Binder IPC.
  * <p>
- * Pro tip: while developing an app with RootServices, modify the run/debug configuration and check
- * the "Always install with package manager" option if testing on Android 11+, or else the code
- * changes will not be reflected after Android Studio's deployment.
+ * Important: while developing an app with RootServices, modify the run/debug configuration and
+ * check the "Always install with package manager" option if testing on Android 11+, or else the
+ * code changes will not be reflected after Android Studio's deployment.
  * <p>
  * This class is almost a complete recreation of a bound service running in a root process.
  * Instead of using the original {@code Context.bindService(...)} methods to start and bind
@@ -107,7 +107,7 @@ public abstract class RootService extends ContextWrapper {
             @NonNull Intent intent,
             @NonNull Executor executor,
             @NonNull ServiceConnection conn) {
-        if (!Shell.rootAccess())
+        if (Utils.isRootImpossible())
             return;
         Shell.Task task = bindOrTask(intent, executor, conn);
         if (task != null) {
@@ -168,7 +168,7 @@ public abstract class RootService extends ContextWrapper {
      */
     @MainThread
     public static void stop(@NonNull Intent intent) {
-        if (!Shell.rootAccess())
+        if (Utils.isRootImpossible())
             return;
         Shell.Task task = stopOrTask(intent);
         if (task != null) {
@@ -237,7 +237,7 @@ public abstract class RootService extends ContextWrapper {
 
     @Override
     public final Context getApplicationContext() {
-        return Utils.getContext();
+        return Utils.context;
     }
 
     /**

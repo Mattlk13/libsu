@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 John "topjohnwu" Wu
+ * Copyright 2023 John "topjohnwu" Wu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,10 +34,10 @@ import android.widget.ScrollView;
 import androidx.annotation.NonNull;
 
 import com.topjohnwu.libsuexample.databinding.ActivityMainBinding;
-import com.topjohnwu.superuser.BusyBoxInstaller;
 import com.topjohnwu.superuser.CallbackList;
 import com.topjohnwu.superuser.Shell;
 import com.topjohnwu.superuser.ipc.RootService;
+import com.topjohnwu.superuser.nio.FileSystemManager;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -50,9 +50,7 @@ public class MainActivity extends Activity implements Handler.Callback {
     static {
         Shell.enableVerboseLogging = BuildConfig.DEBUG;
         Shell.setDefaultBuilder(Shell.Builder.create()
-                .setFlags(Shell.FLAG_REDIRECT_STDERR)
-                // BusyBoxInstaller should come first!
-                .setInitializers(BusyBoxInstaller.class, ExampleInitializer.class)
+                .setInitializers(ExampleInitializer.class)
         );
     }
 
@@ -75,6 +73,7 @@ public class MainActivity extends Activity implements Handler.Callback {
 
     private AIDLConnection aidlConn;
     private AIDLConnection daemonConn;
+    private FileSystemManager remoteFS;
 
     class AIDLConnection implements ServiceConnection {
 
@@ -87,25 +86,39 @@ public class MainActivity extends Activity implements Handler.Callback {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             Log.d(TAG, "AIDL onServiceConnected");
-            if (isDaemon) daemonConn = this;
-            else aidlConn = this;
-            refreshUI();
+            if (isDaemon) {
+                daemonConn = this;
+            } else {
+                aidlConn = this;
+            }
 
             ITestService ipc = ITestService.Stub.asInterface(service);
             try {
                 consoleList.add("AIDL PID : " + ipc.getPid());
                 consoleList.add("AIDL UID : " + ipc.getUid());
                 consoleList.add("AIDL UUID: " + ipc.getUUID());
+                if (!isDaemon) {
+                    // Get the remote file system service proxy through AIDL
+                    IBinder binder = ipc.getFileSystemService();
+                    // Create a fs manager with the binder proxy.
+                    // We will use this fs manager in our stress test.
+                    remoteFS = FileSystemManager.getRemote(binder);
+                }
             } catch (RemoteException e) {
                 Log.e(TAG, "Remote error", e);
             }
+            refreshUI();
         }
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
             Log.d(TAG, "AIDL onServiceDisconnected");
-            if (isDaemon) daemonConn = null;
-            else aidlConn = null;
+            if (isDaemon) {
+                daemonConn = null;
+            } else {
+                aidlConn = null;
+                remoteFS = null;
+            }
             refreshUI();
         }
     }
@@ -168,6 +181,7 @@ public class MainActivity extends Activity implements Handler.Callback {
         binding.aidlSvc.setText(aidlConn == null ? "Bind AIDL" : "Unbind AIDL");
         binding.msgSvc.setText(msgConn == null ? "Bind MSG" : "Unbind MSG");
         binding.testDaemon.setText(daemonConn == null ? "Bind Daemon" : "Unbind Daemon");
+        binding.stressTest.setEnabled(remoteFS != null);
     }
 
     @Override
@@ -246,9 +260,23 @@ public class MainActivity extends Activity implements Handler.Callback {
         binding.testAsync.setOnClickListener(v ->
                 Shell.cmd("test_async").to(consoleList).submit());
 
+        binding.testQueue.setOnClickListener(v -> {
+            Shell.getShell(Shell.EXECUTOR, s -> {
+                Log.i(TAG, "Queue: 1");
+                s.newJob().to(consoleList).add("sleep 1", "echo 1").submit();
+                Log.i(TAG, "Queue: 2");
+                s.newJob().to(consoleList).add("echo 2").exec();
+                Log.i(TAG, "Queue: 3");
+                s.newJob().to(consoleList).add("sleep 1", "echo 3").submit();
+                Log.i(TAG, "Queue: 4");
+                s.newJob().to(consoleList).add("echo 4").submit();
+                Log.i(TAG, "Queue: done");
+            });
+        });
+
         binding.clear.setOnClickListener(v -> binding.console.setText(""));
 
-        binding.stressTest.setOnClickListener(v -> StressTest.perform(consoleList));
+        binding.stressTest.setOnClickListener(v -> StressTest.perform(remoteFS));
     }
 
     /**

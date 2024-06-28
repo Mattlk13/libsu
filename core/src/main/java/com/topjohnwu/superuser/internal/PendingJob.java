@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 John "topjohnwu" Wu
+ * Copyright 2024 John "topjohnwu" Wu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,64 +22,78 @@ import androidx.annotation.Nullable;
 import com.topjohnwu.superuser.NoShellException;
 import com.topjohnwu.superuser.Shell;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.concurrent.Executor;
+import java.util.concurrent.Future;
 
-class PendingJob extends JobImpl {
+class PendingJob extends JobTask {
 
-    private final boolean isSU;
-    private boolean retry;
+    @Nullable
+    private Runnable retryTask;
 
-    PendingJob(boolean su) {
-        isSU = su;
-        retry = true;
-        to(NOPList.getInstance());
+    PendingJob() {
+        to(UNSET_LIST);
+    }
+
+    @Override
+    public void shellDied() {
+        if (retryTask != null) {
+            Runnable r = retryTask;
+            retryTask = null;
+            r.run();
+        } else {
+            super.shellDied();
+        }
+    }
+
+    private void exec0() {
+        ShellImpl shell;
+        try {
+            shell = MainShell.get();
+        } catch (NoShellException e) {
+            super.shellDied();
+            return;
+        }
+        try {
+            shell.execTask(this);
+        } catch (IOException ignored) { /* JobTask does not throw */ }
     }
 
     @NonNull
     @Override
     public Shell.Result exec() {
-        try {
-            shell = MainShell.get();
-        } catch (NoShellException e) {
-            close();
-            return ResultImpl.INSTANCE;
-        }
-        if (isSU && !shell.isRoot()) {
-            close();
-            return ResultImpl.INSTANCE;
-        }
-        if (out instanceof NOPList)
-            out = new ArrayList<>();
-        Shell.Result res = super.exec();
-        if (retry && res == ResultImpl.SHELL_ERR) {
-            // The cached shell is terminated, try to re-run this task
-            retry = false;
-            return exec();
-        }
-        return res;
+        retryTask = this::exec0;
+        ResultHolder holder = new ResultHolder();
+        callback = holder;
+        callbackExecutor = null;
+        exec0();
+        return holder.getResult();
+    }
+
+    private void submit0() {
+        MainShell.get(null, s -> {
+            ShellImpl shell = (ShellImpl) s;
+            shell.submitTask(this);
+        });
+    }
+
+    @NonNull
+    @Override
+    public Future<Shell.Result> enqueue() {
+        retryTask = this::submit0;
+        ResultFuture future = new ResultFuture();
+        callback = future;
+        callbackExecutor = null;
+        submit0();
+        return future;
     }
 
     @Override
     public void submit(@Nullable Executor executor, @Nullable Shell.ResultCallback cb) {
-        MainShell.get(null, s -> {
-            if (isSU && !s.isRoot()) {
-                close();
-                ResultImpl.INSTANCE.callback(executor, cb);
-                return;
-            }
-            if (out instanceof NOPList)
-                out = (cb == null) ? null : new ArrayList<>();
-            shell = (ShellImpl) s;
-            super.submit(executor, res -> {
-                if (retry && res == ResultImpl.SHELL_ERR) {
-                    // The cached shell is terminated, try to re-schedule this task
-                    retry = false;
-                    submit(executor, cb);
-                } else if (cb != null) {
-                    cb.onResult(res);
-                }
-            });
-        });
+        retryTask = this::submit0;
+        callbackExecutor = executor;
+        callback = cb;
+        submit0();
     }
 }

@@ -1,7 +1,7 @@
+import com.android.tools.r8.R8
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Paths
-import com.android.tools.r8.R8
 import java.util.stream.Collectors
 
 plugins {
@@ -10,11 +10,20 @@ plugins {
 
 group="com.github.topjohnwu.libsu"
 
+android {
+    namespace = "com.topjohnwu.superuser.ipc"
+    buildFeatures {
+        aidl = true
+    }
+}
+
 android.libraryVariants.all {
-    val jarTask = tasks.register("create${name.capitalize()}MainJar") {
+    val variantName = name
+    val variantCapped = variantName.replaceFirstChar { it.uppercaseChar() }
+    val jarTask = tasks.register("create${variantCapped}MainJar") {
         doLast {
-            val classDir = Paths.get(buildDir.path, "intermediates",
-                "javac", this@all.name, "classes",
+            val classDir = Paths.get(layout.buildDirectory.get().asFile.path, "intermediates",
+                "javac", variantName, "compile${variantCapped}JavaWithJavac", "classes",
                 "com", "topjohnwu", "superuser", "internal")
 
             val classFiles = Files.list(classDir).use { stream ->
@@ -33,7 +42,7 @@ android.libraryVariants.all {
             if (Files.notExists(output.parent))
                 Files.createDirectories(output.parent)
 
-            val pgConf = File(buildDir, "mainJar.pro")
+            val pgConf = layout.buildDirectory.file("mainJar.pro").get().asFile
 
             PrintStream(pgConf.outputStream()).use {
                 it.println("-keep class com.topjohnwu.superuser.internal.RootServerMain")
@@ -57,6 +66,6 @@ android.libraryVariants.all {
 }
 
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    compileOnly("androidx.annotation:annotation:1.6.0")
     api(project(":core"))
 }

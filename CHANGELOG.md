@@ -1,3 +1,94 @@
+## 6.0.0
+
+(5.3.0 release notes are merged into 6.0.0)
+
+- [core] New API `Shell.Builder.setCommands(String...)`
+- [core] New API `Shell.submitTask(Task)`
+- [core] New API `Shell.Task.shellDied()`
+- [core] New internal task scheduling implementation
+- [core] Remove deprecated `Shell.sh/su` methods
+- [core] Deprecate `FLAG_REDIRECT_STDERR`
+- [service] Fix support on pre-6.0 devices
+- [service] Fix crashes on some LG devices
+
+### Migration Guide
+
+- Usage of `Shell.sh/su` methods should be directly replaced with `Shell.cmd`. If you only want to run certain jobs when the shell is root, manually check with `Shell.isRoot()` before creating the job.
+- The behavior of `FLAG_REDIRECT_STDERR` changed and its usage is deprecated. Setting `FLAG_REDIRECT_STDERR` in `Shell.Builder.setFlags(int)` will internally enable `Shell.enableLegacyStderrRedirection` as a best-effort backwards compatibility emulation to support the old behavior. Please note that the new `Shell.enableLegacyStderrRedirection` flag controls the behavior of the entire program, NOT on a per-shell basis as it used to be. If you want to redirect STDERR to STDOUT, please switch over to setting the same output list for both STDOUT and STDERR with `Shell.Job.to(List, List)`, and do not rely on `FLAG_REDIRECT_STDERR` or `Shell.enableLegacyStderrRedirection`.
+
+## 5.2.2
+
+- [service] Disable `dex2oat` when loading trampoline JAR
+
+## 5.2.1
+
+- [service] Fix issue on OnePlus devices when using `Context` internally.
+
+## 5.2.0
+
+- [core] Shell status code `Shell.ROOT_MOUNT_MASTER` is no longer returned as there is no way to reliably determine this information.
+
+## 5.1.0
+
+- [core] New API `Shell.Job.enqueue()` which returns `Future<Shell.Result>` in case you need to retrive asynchronous results without using callbacks
+- [service] Workaround more broken LG system framework
+- [service] Properly support multiuser/work profile
+
+## 5.0.5
+
+- [nio] Optimize internal implementation
+
+## 5.0.4
+
+- [service] Fix incompatibility with old Linux kernels
+- [service] Workaround broken framework implementations in some LG ROMs
+
+## 5.0.3
+
+- [core] Fix `ShellUtils.escapedString(String)`
+- [service] Prevent root process leaks when client process crashed before establishing connection
+
+## 5.0.2
+
+- [service] Resolve `/proc/self/exe` to possibly fix some old Samsung kernel restrictions
+
+## 5.0.1
+
+- [nio] Update the remote file system's I/O stream implementation with stream specific optimizations. The throughput is improved 2.5x.
+- [nio] Properly annotate nullability of `ExtendedFile`'s `newInputStream()`/`newOutputStream(...)`
+- The `busybox` module is removed. Pin the `busybox` module to version `5.0.0` if you cannot remove its usage immediately
+
+## 5.0.0
+
+Check the updated Javadoc and the `example` app for details on how to use the remote file system in the new `nio` module.
+
+### New Features
+
+- Introduce a new module: `nio`
+  - Includes file system implementations for local and remote processes
+  - New `FileSystemManager` class to access either local or remote file system implementations
+  - New `ExtendedFile` class to extend functionality of the old Java `File` API
+- [core] New API `Shell.isAppGrantedRoot()` returns a nullable `Boolean`:
+  - `true` if a root shell has been created
+  - `false` if it has been determined that root access is impossible to get
+  - `null` if the library has not, or could not determine the current root grant state. Future invocations of this method may return a non-null value if the library gained more information during shell creation.
+- [core] New API `Shell.Builder.setContext(context)`: allow the developer to explicitly provide a `Context` object
+- [io] `SuFile` is updated to also extend `ExtendedFile`, which adds some new features and APIs
+
+### Deprecation
+
+- Version `5.0.0` will be the final release of the `busybox` module. If you cannot remove the usage of the module, you can pin the `busybox` module to version `5.0.0`, as it is updated to be fully self contained, making it guaranteed to work with future `libsu` versions.
+- Usage of `SuFile`/`SuFileOutputStream`/`SuFileInputStream`/`SuRandomAccessFile` is discouraged. Although these APIs will remain for the foreseeable future, please migrate to use `RootService` + the `nio` module for all root I/O operations.
+- `Shell.rootAccess()` is deprecated. Please switch to use the more accurate `Shell.isAppGrantedRoot()` API
+
+## 4.0.3
+
+### Improvements
+
+- [core] Ensure exactly one main shell will be created
+- [core] Ensure the asynchronous `Shell.getShell(callback)` never blocks
+- [service] Reduce one IPC back and forth during the initial binding
+
 ## 4.0.2
 
 ### Bug Fixes

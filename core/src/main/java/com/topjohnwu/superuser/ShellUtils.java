@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 John "topjohnwu" Wu
+ * Copyright 2023 John "topjohnwu" Wu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -100,7 +100,7 @@ public final class ShellUtils {
      * @return {@code true} if the current thread is the main thread.
      */
     public static boolean onMainThread() {
-        return ((Looper.myLooper() != null) && (Looper.myLooper() == Looper.getMainLooper()));
+        return Looper.getMainLooper().getThread() == Thread.currentThread();
     }
 
     /**
@@ -128,7 +128,8 @@ public final class ShellUtils {
         for (int i = 0; i < len; ++i) {
             char c = s.charAt(i);
             if (c == SINGLE_QUOTE) {
-                sb.append('\\');
+                sb.append("'\\''");
+                continue;
             }
             sb.append(c);
         }
